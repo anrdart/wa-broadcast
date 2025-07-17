@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "name": "whatsapp-web.js",
   "version": "1.31.0",
   "description": "Library for interacting with the WhatsApp Web API ",
@@ -88,3 +89,31 @@
     "unzipper": "^0.10.11"
   }
 }
+=======
+  "name": "wa-broadcast-frontend",
+  "version": "1.2.1",
+  "description": "WhatsApp Broadcast Frontend - Static Web Application",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx serve . -p 8080",
+    "build": "echo 'No build process needed for static files'",
+    "start": "npx serve . -p 8080",
+    "preview": "npx serve . -p 8080"
+  },
+  "devDependencies": {
+    "serve": "^14.2.1"
+  },
+  "keywords": [
+    "whatsapp",
+    "frontend",
+    "static",
+    "broadcast",
+    "web-app"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+>>>>>>> 8099e9b (Optimized WhatsApp Broadcast Tool - Complete refactor with improved code structure, documentation, and maintainability)

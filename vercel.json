@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
     "version": 2,
     "builds": [
         {
@@ -25,4 +26,27 @@
             "maxDuration": 30
         }
     }
+=======
+  "version": 2,
+  "name": "wa-broadcast-frontend",
+  "builds": [
+    {
+      "src": "**/*",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ],
+  "functions": {},
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+>>>>>>> 8099e9b (Optimized WhatsApp Broadcast Tool - Complete refactor with improved code structure, documentation, and maintainability)
 }
