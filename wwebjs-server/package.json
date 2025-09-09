@@ -1,0 +1,17 @@
+{
+  "name": "wwebjs-server",
+  "version": "1.0.0",
+  "description": "WhatsApp backend powered by whatsapp-web.js with REST + Socket.IO APIs compatible with existing frontend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "socket.io": "^4.8.1",
+    "whatsapp-web.js": "^1.24.0"
+  }
+}

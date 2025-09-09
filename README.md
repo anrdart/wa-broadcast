@@ -49,8 +49,7 @@ A modern web-based WhatsApp broadcast tool that allows you to send messages to m
 ```
 wa-broadcast/
 ├── index.html          # Main HTML file
-├── script.js           # JavaScript application logic
-├── style.css           # CSS styles and animations
+├── src/                # Vue.js application source code
 ├── package.json        # Project configuration
 ├── vercel.json         # Vercel deployment configuration
 ├── .gitignore          # Git ignore rules
@@ -378,16 +377,7 @@ Alternatively, you can serve the static files using any web server.
 
 ## Configuration
 
-The application includes several configurable constants in `script.js`:
-
-```javascript
-static CONFIG = {
-    BACKEND_URL: 'ws://localhost:8080',
-    MAX_CONTACTS: 256,
-    QR_SIZE: 256,
-    NOTIFICATION_TIMEOUT: 3000
-};
-```
+The application is built with Vue.js and includes configurable settings in the stores and components.
 
 ### Backend URL
 Update the `BACKEND_URL` to point to your WebSocket server endpoint.
@@ -404,20 +394,14 @@ The main HTML structure containing:
 - Message composer interface
 - Modal dialogs for progress and confirmations
 
-### `script.js`
-Core JavaScript application featuring:
-- `WhatsAppBroadcastApp` class with modular architecture
-- WebSocket communication handling
-- Contact management and filtering
-- Message composition and sending
-- UI state management and animations
+### Vue.js Architecture
 
-### `style.css`
-Comprehensive styling including:
-- Modern gradient backgrounds and glassmorphism effects
-- Responsive design for all screen sizes
-- Smooth animations and transitions
-- Component-specific styling for all UI elements
+The application follows Vue.js best practices with:
+- **Components**: Reusable UI components in `src/components/`
+- **Views**: Page-level components in `src/views/`
+- **Stores**: Pinia state management in `src/stores/`
+- **Router**: Vue Router configuration in `src/router/`
+- **Styling**: Tailwind CSS for responsive design
 
 ## Browser Compatibility
 
