@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "name": "Update Docs on Source Changes",
+  "description": "Watches Go backend files and TypeScript/Vue frontend files for changes, then prompts the agent to update relevant documentation in README.md or backend/README.md",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/*.go",
+      "**/*.ts",
+      "**/*.vue",
+      "**/go.mod",
+      "**/package.json",
+      "schema.sql"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A source file has been modified. Please review the changes and determine if the documentation needs to be updated. If the changes affect functionality, APIs, configuration, or usage patterns, update the relevant documentation in README.md or backend/README.md. Focus on keeping docs accurate and in sync with the codebase."
+  }
+}

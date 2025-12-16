@@ -1,6 +1,0 @@
-2025/10/17 19:39:32 📱 No existing WhatsApp session found - QR code will be generated
-2025/10/17 19:39:32 ✅ RealtimeKit enabled - API URL: https://api.realtime.cloudflare.com
-2025/10/17 19:39:32 📡 RealtimeKit Channel: broadcasto
-2025/10/17 19:39:32 ⚠️  Warning: RealtimeKit API key should start with 'rtk_'
-2025/10/17 19:39:32 📅 Message scheduling enabled (check interval: 30s)
-2025/10/17 19:39:32 Starting WhatsMeow backend on :3000 ...
