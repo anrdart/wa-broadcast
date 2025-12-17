@@ -22,3 +22,6 @@ logs
 .env
 .env.*
 !.env.example
+
+# WhatsApp API session data (Docker volumes)
+data/

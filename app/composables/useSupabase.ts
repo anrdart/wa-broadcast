@@ -10,6 +10,7 @@ import type {
   BroadcastHistoryRecord,
   ScheduledMessageRecord,
   QueuedOperation,
+  WhatsAppSessionRecord,
 } from '~/types/supabase'
 import {
   fromBroadcastHistoryRecord,
@@ -95,6 +96,12 @@ export interface UseSupabase {
   updateDeviceSession: (whatsappNumber: string) => Promise<DeviceSessionRecord | null>
   deactivateDeviceSession: () => Promise<void>
 
+  // WhatsApp Session CRUD (Requirements: 4.1, 4.2, 4.4)
+  createWhatsAppSession: (session: Omit<WhatsAppSessionRecord, 'created_at' | 'updated_at' | 'last_active_at'>) => Promise<WhatsAppSessionRecord | null>
+  getWhatsAppSession: (deviceId: string) => Promise<WhatsAppSessionRecord | null>
+  updateWhatsAppSession: (sessionId: string, updates: Partial<Omit<WhatsAppSessionRecord, 'id' | 'created_at'>>) => Promise<WhatsAppSessionRecord | null>
+  deleteWhatsAppSession: (sessionId: string) => Promise<boolean>
+
   // Broadcast History
   fetchBroadcastHistory: () => Promise<BroadcastHistoryRecord[]>
   saveBroadcastHistory: (broadcast: BroadcastHistoryRecord) => Promise<BroadcastHistoryRecord | null>
@@ -118,6 +125,10 @@ export interface UseSupabase {
     setScheduledMessages: (messages: LocalScheduledMessage[]) => void
   }) => void
   unsubscribeFromChanges: () => void
+
+  // WhatsApp Session Realtime Subscription (Requirements: 4.2)
+  subscribeToSessionChanges: (handler: RealtimeEventHandler<WhatsAppSessionRecord>) => void
+  unsubscribeFromSessionChanges: () => void
 
   // Offline Queue (Requirements: 6.1, 6.2, 6.3, 6.4)
   queueOperation: (operation: Omit<QueuedOperation, 'id' | 'timestamp'>) => void
@@ -286,6 +297,175 @@ export const useSupabase = (): UseSupabase => {
       lastSyncAt.value = new Date()
     } catch (error) {
       console.error('[Supabase] deactivateDeviceSession error:', error)
+    } finally {
+      isSyncing.value = false
+    }
+  }
+
+  // ============================================
+  // WhatsApp Session CRUD Operations
+  // Requirements: 4.1, 4.2, 4.4
+  // ============================================
+
+  /**
+   * Create a new WhatsApp session in Supabase
+   * Requirements: 4.1
+   * @param session - Session data to create (without timestamps)
+   * @returns The created session record or null on error
+   */
+  const createWhatsAppSession = async (
+    session: Omit<WhatsAppSessionRecord, 'created_at' | 'updated_at' | 'last_active_at'>
+  ): Promise<WhatsAppSessionRecord | null> => {
+    if (!import.meta.client) return null
+
+    try {
+      isSyncing.value = true
+
+      const { data, error } = await supabase
+        .from('whatsapp_sessions')
+        .insert({
+          id: session.id,
+          device_id: session.device_id,
+          whatsapp_number: session.whatsapp_number,
+          api_instance_port: session.api_instance_port,
+          status: session.status,
+          session_token: session.session_token,
+          token_expires_at: session.token_expires_at,
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('[Supabase] Error creating WhatsApp session:', error)
+        isConnected.value = false
+        return null
+      }
+
+      isConnected.value = true
+      lastSyncAt.value = new Date()
+      return data as WhatsAppSessionRecord
+    } catch (error) {
+      console.error('[Supabase] createWhatsAppSession error:', error)
+      isConnected.value = false
+      return null
+    } finally {
+      isSyncing.value = false
+    }
+  }
+
+  /**
+   * Get WhatsApp session by device ID
+   * Requirements: 4.1
+   * @param targetDeviceId - The device ID to look up
+   * @returns The session record or null if not found
+   */
+  const getWhatsAppSession = async (targetDeviceId: string): Promise<WhatsAppSessionRecord | null> => {
+    if (!import.meta.client) return null
+
+    try {
+      isSyncing.value = true
+
+      const { data, error } = await supabase
+        .from('whatsapp_sessions')
+        .select('*')
+        .eq('device_id', targetDeviceId)
+        .single()
+
+      if (error) {
+        // PGRST116 = no rows returned, which is expected for new devices
+        if (error.code !== 'PGRST116') {
+          console.error('[Supabase] Error fetching WhatsApp session:', error)
+          isConnected.value = false
+        }
+        return null
+      }
+
+      isConnected.value = true
+      lastSyncAt.value = new Date()
+      return data as WhatsAppSessionRecord
+    } catch (error) {
+      console.error('[Supabase] getWhatsAppSession error:', error)
+      isConnected.value = false
+      return null
+    } finally {
+      isSyncing.value = false
+    }
+  }
+
+  /**
+   * Update WhatsApp session in Supabase
+   * Requirements: 4.2, 4.4
+   * @param sessionId - The session ID to update
+   * @param updates - Partial session data to update
+   * @returns The updated session record or null on error
+   */
+  const updateWhatsAppSession = async (
+    sessionId: string,
+    updates: Partial<Omit<WhatsAppSessionRecord, 'id' | 'created_at'>>
+  ): Promise<WhatsAppSessionRecord | null> => {
+    if (!import.meta.client) return null
+
+    try {
+      isSyncing.value = true
+
+      const { data, error } = await supabase
+        .from('whatsapp_sessions')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', sessionId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('[Supabase] Error updating WhatsApp session:', error)
+        isConnected.value = false
+        return null
+      }
+
+      isConnected.value = true
+      lastSyncAt.value = new Date()
+      return data as WhatsAppSessionRecord
+    } catch (error) {
+      console.error('[Supabase] updateWhatsAppSession error:', error)
+      isConnected.value = false
+      return null
+    } finally {
+      isSyncing.value = false
+    }
+  }
+
+  /**
+   * Delete WhatsApp session from Supabase
+   * Requirements: 4.4
+   * @param sessionId - The session ID to delete
+   * @returns true if deleted successfully, false otherwise
+   */
+  const deleteWhatsAppSession = async (sessionId: string): Promise<boolean> => {
+    if (!import.meta.client) return false
+
+    try {
+      isSyncing.value = true
+
+      const { error } = await supabase
+        .from('whatsapp_sessions')
+        .delete()
+        .eq('id', sessionId)
+
+      if (error) {
+        console.error('[Supabase] Error deleting WhatsApp session:', error)
+        isConnected.value = false
+        return false
+      }
+
+      isConnected.value = true
+      lastSyncAt.value = new Date()
+      return true
+    } catch (error) {
+      console.error('[Supabase] deleteWhatsAppSession error:', error)
+      isConnected.value = false
+      return false
     } finally {
       isSyncing.value = false
     }
@@ -830,6 +1010,68 @@ export const useSupabase = (): UseSupabase => {
   }
 
   // ============================================
+  // WhatsApp Session Realtime Subscription
+  // Requirements: 4.2
+  // ============================================
+
+  // Store active session subscription channel
+  let sessionRealtimeChannel: RealtimeChannel | null = null
+
+  /**
+   * Subscribe to realtime changes on whatsapp_sessions table
+   * Requirements: 4.2
+   * @param handler - Handler function for session change events
+   */
+  const subscribeToSessionChanges = (handler: RealtimeEventHandler<WhatsAppSessionRecord>): void => {
+    if (!import.meta.client) return
+
+    const currentDeviceId = deviceId.value || getDeviceId()
+
+    // Unsubscribe from existing channel if any
+    if (sessionRealtimeChannel) {
+      unsubscribeFromSessionChanges()
+    }
+
+    // Create a new channel for session realtime subscriptions
+    sessionRealtimeChannel = supabase
+      .channel(`session-${currentDeviceId}`)
+      .on<WhatsAppSessionRecord>(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'whatsapp_sessions',
+          filter: `device_id=eq.${currentDeviceId}`,
+        },
+        (payload) => {
+          console.log('[Supabase Realtime] whatsapp_sessions change:', payload.eventType)
+          handler(payload)
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Supabase Realtime] Session subscription status:', status)
+        
+        if (status === 'SUBSCRIBED') {
+          isConnected.value = true
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          isConnected.value = false
+        }
+      })
+  }
+
+  /**
+   * Unsubscribe from session realtime changes
+   * Requirements: 4.2
+   */
+  const unsubscribeFromSessionChanges = (): void => {
+    if (sessionRealtimeChannel) {
+      supabase.removeChannel(sessionRealtimeChannel)
+      sessionRealtimeChannel = null
+      console.log('[Supabase Realtime] Unsubscribed from session changes')
+    }
+  }
+
+  // ============================================
   // Offline Queue
   // Requirements: 6.1, 6.2, 6.3, 6.4
   // ============================================
@@ -1057,6 +1299,12 @@ export const useSupabase = (): UseSupabase => {
     updateDeviceSession,
     deactivateDeviceSession,
 
+    // WhatsApp Session CRUD (Requirements: 4.1, 4.2, 4.4)
+    createWhatsAppSession,
+    getWhatsAppSession,
+    updateWhatsAppSession,
+    deleteWhatsAppSession,
+
     // Broadcast History
     fetchBroadcastHistory,
     saveBroadcastHistory,
@@ -1072,6 +1320,10 @@ export const useSupabase = (): UseSupabase => {
     subscribeToChanges,
     subscribeWithAppState,
     unsubscribeFromChanges,
+
+    // WhatsApp Session Realtime Subscription (Requirements: 4.2)
+    subscribeToSessionChanges,
+    unsubscribeFromSessionChanges,
 
     // Offline Queue (Requirements: 6.1, 6.2, 6.3, 6.4)
     queueOperation,

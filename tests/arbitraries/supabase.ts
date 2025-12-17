@@ -205,3 +205,79 @@ export const queuedOperationListArbitrary = (minLength = 1, maxLength = 10): fc.
       timestamp: op.timestamp + index,
     }))
   })
+
+
+/**
+ * WhatsApp Session status types
+ */
+export const sessionStatusArbitrary = fc.constantFrom('pending', 'connected', 'disconnected', 'dormant') as fc.Arbitrary<'pending' | 'connected' | 'disconnected' | 'dormant'>
+
+/**
+ * Generates a WhatsAppSessionRecord
+ */
+export interface WhatsAppSessionRecord {
+  id: string
+  device_id: string
+  whatsapp_number: string | null
+  api_instance_port: number
+  status: 'pending' | 'connected' | 'disconnected' | 'dormant'
+  session_token: string | null
+  token_expires_at: string | null
+  created_at: string
+  last_active_at: string
+  updated_at: string
+}
+
+export const whatsappSessionRecordArbitrary = (deviceId?: string): fc.Arbitrary<WhatsAppSessionRecord> =>
+  fc.record({
+    id: uuidArbitrary,
+    device_id: deviceId ? fc.constant(deviceId) : deviceIdArbitrary,
+    whatsapp_number: fc.option(phoneNumberArbitrary, { nil: null }),
+    api_instance_port: fc.integer({ min: 3001, max: 3010 }),
+    status: sessionStatusArbitrary,
+    session_token: fc.option(fc.base64String({ minLength: 10, maxLength: 200 }), { nil: null }),
+    token_expires_at: fc.option(isoDateArbitrary, { nil: null }),
+    created_at: isoDateArbitrary,
+    last_active_at: isoDateArbitrary,
+    updated_at: isoDateArbitrary,
+  })
+
+/**
+ * Generates a list of WhatsApp sessions with mixed device IDs
+ */
+export const mixedDeviceSessionsArbitrary = (targetDeviceId: string) =>
+  fc.array(
+    fc.oneof(
+      whatsappSessionRecordArbitrary(targetDeviceId),
+      whatsappSessionRecordArbitrary()
+    ),
+    { minLength: 0, maxLength: 20 }
+  )
+
+/**
+ * Session Pool Record
+ */
+export interface SessionPoolRecord {
+  id: string
+  port: number
+  status: 'available' | 'in_use' | 'maintenance'
+  session_id: string | null
+  container_name: string | null
+  last_health_check: string | null
+  created_at: string
+  updated_at: string
+}
+
+export const poolStatusArbitrary = fc.constantFrom('available', 'in_use', 'maintenance') as fc.Arbitrary<'available' | 'in_use' | 'maintenance'>
+
+export const sessionPoolRecordArbitrary = (): fc.Arbitrary<SessionPoolRecord> =>
+  fc.record({
+    id: uuidArbitrary,
+    port: fc.integer({ min: 3001, max: 3010 }),
+    status: poolStatusArbitrary,
+    session_id: fc.option(uuidArbitrary, { nil: null }),
+    container_name: fc.option(fc.string({ minLength: 5, maxLength: 30 }), { nil: null }),
+    last_health_check: fc.option(isoDateArbitrary, { nil: null }),
+    created_at: isoDateArbitrary,
+    updated_at: isoDateArbitrary,
+  })

@@ -41,6 +41,31 @@ export interface DeviceSessionRecord {
   updated_at: string
 }
 
+// Multi-session support types
+export interface WhatsAppSessionRecord {
+  id: string
+  device_id: string
+  whatsapp_number: string | null
+  api_instance_port: number
+  status: 'pending' | 'connected' | 'disconnected' | 'dormant'
+  session_token: string | null
+  token_expires_at: string | null
+  created_at: string
+  last_active_at: string
+  updated_at: string
+}
+
+export interface SessionPoolRecord {
+  id: string
+  port: number
+  status: 'available' | 'in_use' | 'maintenance'
+  session_id: string | null
+  container_name: string | null
+  last_health_check: string | null
+  created_at: string
+  updated_at: string
+}
+
 // Offline queue types
 export interface QueuedOperation {
   id: string
@@ -75,6 +100,16 @@ export interface Database {
         Row: DeviceSessionRecord
         Insert: Omit<DeviceSessionRecord, 'created_at' | 'updated_at'>
         Update: Partial<Omit<DeviceSessionRecord, 'id' | 'created_at'>>
+      }
+      whatsapp_sessions: {
+        Row: WhatsAppSessionRecord
+        Insert: Omit<WhatsAppSessionRecord, 'created_at' | 'updated_at' | 'last_active_at'>
+        Update: Partial<Omit<WhatsAppSessionRecord, 'id' | 'created_at'>>
+      }
+      session_pool: {
+        Row: SessionPoolRecord
+        Insert: Omit<SessionPoolRecord, 'created_at' | 'updated_at'>
+        Update: Partial<Omit<SessionPoolRecord, 'id' | 'created_at'>>
       }
     }
   }

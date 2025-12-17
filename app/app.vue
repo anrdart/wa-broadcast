@@ -5,12 +5,17 @@ import type { BroadcastHistory } from '~/composables/useAppState'
 const appState = useAppState()
 const api = useWhatsAppAPI()
 const supabase = useSupabase()
+const sessionManager = useSessionManager()
 
 // Initialize Supabase and load data on mount
-// Requirements: 3.1, 4.1
+// Requirements: 3.1, 4.1, 1.4
 onMounted(async () => {
   // Initialize device session in Supabase
   await supabase.initDeviceSession()
+  
+  // Initialize session manager and restore session if exists
+  // Requirements: 3.1
+  await initializeSession()
   
   // Subscribe to realtime changes with app state integration
   supabase.subscribeWithAppState({
@@ -34,6 +39,29 @@ onMounted(async () => {
   // Requirements: 4.4
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
+
+/**
+ * Initialize session on mount
+ * Requirements: 3.1
+ */
+const initializeSession = async () => {
+  try {
+    // Try to get existing session for this device
+    const existingSession = await sessionManager.getCurrentSession()
+    
+    if (existingSession) {
+      // Set session in API client for routing
+      api.setSession(existingSession)
+      
+      // Check if token needs refresh
+      if (sessionManager.isTokenExpired(existingSession)) {
+        await sessionManager.refreshSessionToken(existingSession.id)
+      }
+    }
+  } catch (err) {
+    console.error('[App] Error initializing session:', err)
+  }
+}
 
 // Cleanup on unmount
 // Requirements: 4.4
@@ -162,12 +190,61 @@ const updateHistoryStatus = (id: string, status: string, success = 0, failed = 0
 // by checking authStatus after initialization
 
 // Watch for authentication and sync contacts
-watch(() => appState.authStatus.value, async (status) => {
+// Requirements: 3.1
+watch(() => appState.authStatus.value, async (status, oldStatus) => {
   if (status === 'loading_data') {
     // Sync contacts with retry during loading phase
     await syncContactsWithRetry()
   }
+  
+  // Handle session status update when authenticated
+  // Requirements: 3.1
+  if (status === 'authenticated' && sessionManager.currentSession.value) {
+    // Update session status to connected in Supabase
+    try {
+      const { $supabase } = useNuxtApp()
+      await $supabase
+        .from('whatsapp_sessions')
+        .update({
+          status: 'connected',
+          last_active_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', sessionManager.currentSession.value.id)
+    } catch (err) {
+      console.error('[App] Error updating session status:', err)
+    }
+  }
 })
+
+/**
+ * Handle logout with session cleanup
+ * Requirements: 1.4
+ */
+const handleLogout = async () => {
+  try {
+    // Terminate the current session (Requirements: 1.4)
+    if (sessionManager.currentSession.value) {
+      await sessionManager.terminateSession(sessionManager.currentSession.value.id)
+    }
+    
+    // Clear session from API client
+    api.setSession(null)
+    
+    // Logout from WhatsApp API
+    await api.logout()
+    
+    // Clear app state
+    await appState.logout()
+  } catch (err) {
+    console.error('[App] Error during logout:', err)
+    // Still clear state even if session termination fails
+    await appState.logout()
+  }
+}
+
+// Expose handleLogout for use in components
+provide('handleLogout', handleLogout)
 
 // Sync contacts from WhatsApp with retry mechanism
 // This handles the delay between QR scan and WhatsApp server sync

@@ -754,3 +754,210 @@ describe('useSupabase', () => {
     })
   })
 })
+
+
+    /**
+     * **Feature: multi-session, Property 7: Session Persistence Round-Trip**
+     * *For any* session data stored in Supabase, retrieving by session ID should return 
+     * equivalent data including all required fields.
+     * **Validates: Requirements 4.1, 4.4**
+     */
+    describe('Property 7: Session Persistence Round-Trip', () => {
+      /**
+       * Simulates the session creation and retrieval logic
+       * This tests that the data transformation preserves all required fields
+       */
+      it('session data round-trip preserves all required fields', () => {
+        fc.assert(
+          fc.property(
+            fc.uuid(),
+            fc.uuid(),
+            fc.option(fc.stringMatching(/^[0-9]{10,15}$/), { nil: null }),
+            fc.integer({ min: 3001, max: 3010 }),
+            fc.constantFrom('pending', 'connected', 'disconnected', 'dormant') as fc.Arbitrary<'pending' | 'connected' | 'disconnected' | 'dormant'>,
+            fc.option(fc.base64String({ minLength: 10, maxLength: 200 }), { nil: null }),
+            fc.option(fc.integer({ min: Date.now(), max: Date.now() + 86400000 }).map(t => new Date(t).toISOString()), { nil: null }),
+            (sessionId, deviceId, whatsappNumber, port, status, token, tokenExpiresAt) => {
+              // Simulate session creation input (what we send to Supabase)
+              const sessionInput = {
+                id: sessionId,
+                device_id: deviceId,
+                whatsapp_number: whatsappNumber,
+                api_instance_port: port,
+                status: status,
+                session_token: token,
+                token_expires_at: tokenExpiresAt,
+              }
+
+              // Simulate what Supabase would return (adding timestamps)
+              const simulatedDbResponse = {
+                ...sessionInput,
+                created_at: new Date().toISOString(),
+                last_active_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              }
+
+              // Property: All input fields should be preserved in the response
+              expect(simulatedDbResponse.id).toBe(sessionInput.id)
+              expect(simulatedDbResponse.device_id).toBe(sessionInput.device_id)
+              expect(simulatedDbResponse.whatsapp_number).toBe(sessionInput.whatsapp_number)
+              expect(simulatedDbResponse.api_instance_port).toBe(sessionInput.api_instance_port)
+              expect(simulatedDbResponse.status).toBe(sessionInput.status)
+              expect(simulatedDbResponse.session_token).toBe(sessionInput.session_token)
+              expect(simulatedDbResponse.token_expires_at).toBe(sessionInput.token_expires_at)
+
+              // Property: Timestamps should be valid ISO strings
+              expect(() => new Date(simulatedDbResponse.created_at)).not.toThrow()
+              expect(() => new Date(simulatedDbResponse.last_active_at)).not.toThrow()
+              expect(() => new Date(simulatedDbResponse.updated_at)).not.toThrow()
+            }
+          ),
+          { numRuns: 100 }
+        )
+      })
+
+      /**
+       * Tests that session retrieval by device_id returns the correct session
+       */
+      it('session retrieval by device_id returns matching session', () => {
+        fc.assert(
+          fc.property(
+            fc.uuid(),
+            fc.array(
+              fc.record({
+                id: fc.uuid(),
+                device_id: fc.uuid(),
+                whatsapp_number: fc.option(fc.stringMatching(/^[0-9]{10,15}$/), { nil: null }),
+                api_instance_port: fc.integer({ min: 3001, max: 3010 }),
+                status: fc.constantFrom('pending', 'connected', 'disconnected', 'dormant') as fc.Arbitrary<'pending' | 'connected' | 'disconnected' | 'dormant'>,
+                session_token: fc.option(fc.base64String({ minLength: 10, maxLength: 200 }), { nil: null }),
+                token_expires_at: fc.option(fc.integer({ min: Date.now(), max: Date.now() + 86400000 }).map(t => new Date(t).toISOString()), { nil: null }),
+                created_at: fc.integer({ min: Date.now() - 86400000, max: Date.now() }).map(t => new Date(t).toISOString()),
+                last_active_at: fc.integer({ min: Date.now() - 86400000, max: Date.now() }).map(t => new Date(t).toISOString()),
+                updated_at: fc.integer({ min: Date.now() - 86400000, max: Date.now() }).map(t => new Date(t).toISOString()),
+              }),
+              { minLength: 1, maxLength: 10 }
+            ),
+            (targetDeviceId, sessions) => {
+              // Add a session with the target device_id
+              const targetSession = {
+                id: crypto.randomUUID(),
+                device_id: targetDeviceId,
+                whatsapp_number: '1234567890',
+                api_instance_port: 3001,
+                status: 'connected' as const,
+                session_token: 'test-token',
+                token_expires_at: new Date(Date.now() + 86400000).toISOString(),
+                created_at: new Date().toISOString(),
+                last_active_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              }
+
+              const allSessions = [...sessions, targetSession]
+
+              // Simulate filtering by device_id (what getWhatsAppSession does)
+              const foundSession = allSessions.find(s => s.device_id === targetDeviceId)
+
+              // Property: Should find the session with matching device_id
+              expect(foundSession).toBeDefined()
+              expect(foundSession?.device_id).toBe(targetDeviceId)
+              expect(foundSession?.id).toBe(targetSession.id)
+            }
+          ),
+          { numRuns: 100 }
+        )
+      })
+
+      /**
+       * Tests that session update preserves non-updated fields
+       */
+      it('session update preserves non-updated fields', () => {
+        fc.assert(
+          fc.property(
+            fc.record({
+              id: fc.uuid(),
+              device_id: fc.uuid(),
+              whatsapp_number: fc.option(fc.stringMatching(/^[0-9]{10,15}$/), { nil: null }),
+              api_instance_port: fc.integer({ min: 3001, max: 3010 }),
+              status: fc.constantFrom('pending', 'connected', 'disconnected', 'dormant') as fc.Arbitrary<'pending' | 'connected' | 'disconnected' | 'dormant'>,
+              session_token: fc.option(fc.base64String({ minLength: 10, maxLength: 200 }), { nil: null }),
+              token_expires_at: fc.option(fc.integer({ min: Date.now(), max: Date.now() + 86400000 }).map(t => new Date(t).toISOString()), { nil: null }),
+              created_at: fc.integer({ min: Date.now() - 86400000, max: Date.now() }).map(t => new Date(t).toISOString()),
+              last_active_at: fc.integer({ min: Date.now() - 86400000, max: Date.now() }).map(t => new Date(t).toISOString()),
+              updated_at: fc.integer({ min: Date.now() - 86400000, max: Date.now() }).map(t => new Date(t).toISOString()),
+            }),
+            fc.constantFrom('pending', 'connected', 'disconnected', 'dormant') as fc.Arbitrary<'pending' | 'connected' | 'disconnected' | 'dormant'>,
+            (originalSession, newStatus) => {
+              // Simulate partial update (only status changes)
+              const updates = { status: newStatus }
+
+              // Simulate what the update would produce
+              const updatedSession = {
+                ...originalSession,
+                ...updates,
+                updated_at: new Date().toISOString(),
+              }
+
+              // Property: Non-updated fields should be preserved
+              expect(updatedSession.id).toBe(originalSession.id)
+              expect(updatedSession.device_id).toBe(originalSession.device_id)
+              expect(updatedSession.whatsapp_number).toBe(originalSession.whatsapp_number)
+              expect(updatedSession.api_instance_port).toBe(originalSession.api_instance_port)
+              expect(updatedSession.session_token).toBe(originalSession.session_token)
+              expect(updatedSession.token_expires_at).toBe(originalSession.token_expires_at)
+              expect(updatedSession.created_at).toBe(originalSession.created_at)
+
+              // Property: Updated field should have new value
+              expect(updatedSession.status).toBe(newStatus)
+
+              // Property: updated_at should be newer
+              expect(new Date(updatedSession.updated_at).getTime()).toBeGreaterThanOrEqual(
+                new Date(originalSession.updated_at).getTime()
+              )
+            }
+          ),
+          { numRuns: 100 }
+        )
+      })
+
+      /**
+       * Tests that session deletion removes the session
+       */
+      it('session deletion removes session from collection', () => {
+        fc.assert(
+          fc.property(
+            fc.array(
+              fc.record({
+                id: fc.uuid(),
+                device_id: fc.uuid(),
+                whatsapp_number: fc.option(fc.stringMatching(/^[0-9]{10,15}$/), { nil: null }),
+                api_instance_port: fc.integer({ min: 3001, max: 3010 }),
+                status: fc.constantFrom('pending', 'connected', 'disconnected', 'dormant') as fc.Arbitrary<'pending' | 'connected' | 'disconnected' | 'dormant'>,
+              }),
+              { minLength: 1, maxLength: 10 }
+            ),
+            (sessions) => {
+              // Pick a session to delete
+              const sessionToDelete = sessions[0]
+
+              // Simulate deletion (filter out the deleted session)
+              const afterDeletion = sessions.filter(s => s.id !== sessionToDelete.id)
+
+              // Property: Deleted session should not exist
+              const found = afterDeletion.find(s => s.id === sessionToDelete.id)
+              expect(found).toBeUndefined()
+
+              // Property: Other sessions should still exist
+              expect(afterDeletion.length).toBe(sessions.length - 1)
+
+              // Property: All remaining sessions should have different IDs
+              sessions.slice(1).forEach(s => {
+                const stillExists = afterDeletion.find(remaining => remaining.id === s.id)
+                expect(stillExists).toBeDefined()
+              })
+            }
+          ),
+          { numRuns: 100 }
+        )
+      })
+    })

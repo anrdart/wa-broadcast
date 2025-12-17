@@ -3,6 +3,7 @@ import { MessageCircle, QrCode, RefreshCw, Loader2, WifiOff, CheckCircle2, Clock
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '~/components/ui/card'
 import { Button } from '~/components/ui/button'
 import { Badge } from '~/components/ui/badge'
+import { getDeviceId } from '~/utils/deviceId'
 
 const props = defineProps<{
   qrCode?: string | null
@@ -11,11 +12,13 @@ const props = defineProps<{
 
 const appState = useAppState()
 const api = useWhatsAppAPI()
+const sessionManager = useSessionManager()
 
 const isLoading = ref(true)
 const localError = ref<string | null>(null)
 const localQR = ref<string | null>(null)
 const qrExpiresIn = ref(30) // QR expires in 30 seconds
+const isRestoringSession = ref(false)
 
 let pollingInterval: ReturnType<typeof setInterval> | null = null
 let qrRefreshInterval: ReturnType<typeof setInterval> | null = null
@@ -24,26 +27,77 @@ onMounted(async () => {
   await initConnection()
 })
 
+/**
+ * Initialize connection with session management
+ * Requirements: 1.2, 1.3, 3.4
+ */
 const initConnection = async () => {
   isLoading.value = true
   localError.value = null
+  isRestoringSession.value = false
 
   try {
-    // First check if already connected
-    const deviceResult = await api.checkDevices()
+    const deviceId = getDeviceId()
     
-    if (deviceResult.connected) {
-      // Already connected - go to dashboard
-      goToDashboard()
+    // Check if device has existing session (Requirements: 1.3)
+    const existingSession = await sessionManager.getCurrentSession()
+    
+    if (existingSession) {
+      // Try to restore existing session
+      isRestoringSession.value = true
+      
+      // Set session in API client for routing
+      api.setSession(existingSession)
+      
+      // Check if session is still connected
+      const deviceResult = await api.checkDevices()
+      
+      if (deviceResult.connected) {
+        // Session restored successfully - go to dashboard
+        goToDashboard()
+        return
+      }
+      
+      // Session exists but not connected - check if we can restore
+      if (existingSession.status === 'connected' || existingSession.status === 'pending') {
+        // Try to restore the session (Requirements: 1.3)
+        const restoredSession = await sessionManager.restoreSession(existingSession.id)
+        
+        if (restoredSession) {
+          api.setSession(restoredSession)
+          
+          // Check connection again after restore
+          const retryResult = await api.checkDevices()
+          if (retryResult.connected) {
+            goToDashboard()
+            return
+          }
+        }
+      }
+      
+      // Session restoration failed - show QR code (Requirements: 3.4)
+      isRestoringSession.value = false
+    }
+    
+    // No existing session or restoration failed - create new session (Requirements: 1.2)
+    const newSession = await sessionManager.createSession(deviceId)
+    
+    if (!newSession) {
+      // Handle session pool exhausted or other errors
+      localError.value = sessionManager.error.value || 'Failed to create session. Please try again later.'
       return
     }
-
-    // Not connected - get QR code
+    
+    // Set new session in API client
+    api.setSession(newSession)
+    
+    // Get QR code for new session
     await fetchQRCode()
     startPolling()
     startQRRefreshTimer()
   } catch (err: any) {
     localError.value = err.message || 'Failed to connect to server'
+    isRestoringSession.value = false
   } finally {
     isLoading.value = false
   }
@@ -153,7 +207,9 @@ const displayError = computed(() => props.error || localError.value)
       <Card v-if="isLoading && !displayQR" class="glass animate-slide-in">
         <CardContent class="py-12 flex flex-col items-center gap-4">
           <Loader2 class="w-12 h-12 text-whatsapp animate-spin" />
-          <p class="text-muted-foreground">Connecting to WhatsApp server...</p>
+          <p class="text-muted-foreground">
+            {{ isRestoringSession ? 'Restoring your session...' : 'Connecting to WhatsApp server...' }}
+          </p>
         </CardContent>
       </Card>
 

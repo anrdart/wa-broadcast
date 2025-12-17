@@ -1,5 +1,8 @@
 // WhatsApp API Composable
 // Integration with aldinokemal/go-whatsapp-web-multidevice
+// Multi-session support: Routes requests to session-specific API instances
+
+import type { Session as MultiSession } from '~/composables/useSessionManager'
 
 // Types for App State compatibility
 export interface Contact {
@@ -67,26 +70,199 @@ export interface ApiResponse<T> {
   error?: string
 }
 
+// Session-specific error types for multi-session support
+export type SessionErrorCode = 
+  | 'SESSION_NOT_SET'
+  | 'SESSION_EXPIRED'
+  | 'SESSION_INVALID'
+  | 'INSTANCE_UNAVAILABLE'
+
+export interface SessionError {
+  code: SessionErrorCode
+  message: string
+}
+
 export const useWhatsAppAPI = () => {
   const config = useRuntimeConfig()
-  const baseUrl = config.public.whatsappApiUrl as string
+  const defaultBaseUrl = config.public.whatsappApiUrl as string
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const isConnected = ref(false)
   const qrCode = ref<string | null>(null)
+  
+  // Multi-session state
+  const currentMultiSession = ref<MultiSession | null>(null)
+  const sessionError = ref<SessionError | null>(null)
 
-  // API Headers
-  const getHeaders = () => ({
-    'Content-Type': 'application/json',
-  })
+  /**
+   * Set current session for API calls
+   * All subsequent API requests will be routed to this session's instance
+   * Requirements: 1.2, 1.3
+   */
+  const setSession = (session: MultiSession | null): void => {
+    currentMultiSession.value = session
+    sessionError.value = null
+    
+    if (session) {
+      console.log(`[WhatsAppAPI] Session set: port=${session.api_instance_port}, status=${session.status}`)
+    } else {
+      console.log('[WhatsAppAPI] Session cleared')
+    }
+  }
 
-  // Generic API Call
+  /**
+   * Get current session
+   * @returns The current multi-session or null
+   */
+  const getSession = (): MultiSession | null => {
+    return currentMultiSession.value
+  }
+
+  /**
+   * Get base URL for current session
+   * Returns session-specific URL based on allocated port
+   * Requirements: 1.2, 1.3
+   */
+  const getBaseUrl = (): string => {
+    if (!currentMultiSession.value) {
+      // Fall back to default URL if no session is set
+      return defaultBaseUrl
+    }
+    
+    // Build session-specific URL using the allocated port
+    // The URL format assumes nginx routing or direct port access
+    const port = currentMultiSession.value.api_instance_port
+    
+    // Parse the default URL to extract protocol and host
+    try {
+      const url = new URL(defaultBaseUrl)
+      // Replace port with session-specific port
+      url.port = port.toString()
+      return url.origin
+    } catch {
+      // If URL parsing fails, construct manually
+      // Assume localhost for development
+      return `http://localhost:${port}`
+    }
+  }
+
+  /**
+   * Get API headers including session context
+   * Adds session token and port header for routing
+   * Requirements: 1.2, 1.3
+   */
+  const getHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    
+    // Add session headers if session is set
+    if (currentMultiSession.value) {
+      // Session port header for nginx routing
+      headers['X-Session-Port'] = currentMultiSession.value.api_instance_port.toString()
+      
+      // Session token for authentication
+      if (currentMultiSession.value.session_token) {
+        headers['X-Session-Token'] = currentMultiSession.value.session_token
+      }
+      
+      // Session ID for tracking
+      headers['X-Session-Id'] = currentMultiSession.value.id
+    }
+    
+    return headers
+  }
+
+  /**
+   * Check if session is valid for API calls
+   * @returns true if session is valid, false otherwise
+   */
+  const isSessionValid = (): boolean => {
+    if (!currentMultiSession.value) {
+      return false
+    }
+    
+    // Check if session is in a valid state for API calls
+    const validStatuses = ['pending', 'connected']
+    return validStatuses.includes(currentMultiSession.value.status)
+  }
+
+  /**
+   * Require a valid session before making API calls
+   * Sets sessionError if no valid session is available
+   * Requirements: 3.1, 3.2
+   * @returns true if session is valid, false otherwise
+   */
+  const requireSession = (): boolean => {
+    if (!currentMultiSession.value) {
+      sessionError.value = {
+        code: 'SESSION_NOT_SET',
+        message: 'No session is set. Please authenticate first.',
+      }
+      return false
+    }
+    
+    if (!isSessionValid()) {
+      sessionError.value = {
+        code: 'SESSION_INVALID',
+        message: `Session is in invalid state: ${currentMultiSession.value.status}`,
+      }
+      return false
+    }
+    
+    return true
+  }
+
+  /**
+   * Clear session error state
+   */
+  const clearSessionError = (): void => {
+    sessionError.value = null
+  }
+
+  /**
+   * Handle session-specific errors
+   * @param response - The fetch response
+   * @param data - The parsed response data
+   * @returns SessionError if session error detected, null otherwise
+   */
+  const handleSessionError = (response: Response, data: any): SessionError | null => {
+    // Check for session-specific error codes
+    if (response.status === 401) {
+      return {
+        code: 'SESSION_EXPIRED',
+        message: 'Session token has expired. Please re-authenticate.',
+      }
+    }
+    
+    if (response.status === 403) {
+      return {
+        code: 'SESSION_INVALID',
+        message: 'Session is invalid or has been terminated.',
+      }
+    }
+    
+    if (response.status === 503 || (data?.code === 'INSTANCE_UNAVAILABLE')) {
+      return {
+        code: 'INSTANCE_UNAVAILABLE',
+        message: 'WhatsApp API instance is not available.',
+      }
+    }
+    
+    return null
+  }
+
+  // Generic API Call with session support
   const apiCall = async <T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> => {
     isLoading.value = true
     error.value = null
+    sessionError.value = null
+
+    // Get session-specific base URL
+    const baseUrl = getBaseUrl()
 
     try {
       const response = await fetch(`${baseUrl}${endpoint}`, {
@@ -98,6 +274,13 @@ export const useWhatsAppAPI = () => {
       })
 
       const data = await response.json()
+
+      // Check for session-specific errors (Requirements: 3.1, 3.2)
+      const sessError = handleSessionError(response, data)
+      if (sessError) {
+        sessionError.value = sessError
+        return { success: false, error: sessError.message }
+      }
 
       if (!response.ok || (data.code && data.code !== 'SUCCESS')) {
         throw new Error(data.message || 'API request failed')
@@ -158,6 +341,7 @@ export const useWhatsAppAPI = () => {
   }
 
   // Send Image (with File using FormData)
+  // Updated to use session-specific URL and headers
   const sendImageWithFile = async (phone: string, imageFile: File, caption?: string) => {
     const formData = new FormData()
     formData.append('phone', phone)
@@ -166,12 +350,34 @@ export const useWhatsAppAPI = () => {
       formData.append('caption', caption)
     }
     
+    // Get session-specific base URL
+    const baseUrl = getBaseUrl()
+    
+    // Build headers for FormData (exclude Content-Type, let browser set it)
+    const headers: Record<string, string> = {}
+    if (currentMultiSession.value) {
+      headers['X-Session-Port'] = currentMultiSession.value.api_instance_port.toString()
+      if (currentMultiSession.value.session_token) {
+        headers['X-Session-Token'] = currentMultiSession.value.session_token
+      }
+      headers['X-Session-Id'] = currentMultiSession.value.id
+    }
+    
     try {
       const response = await fetch(`${baseUrl}/send/image`, {
         method: 'POST',
+        headers,
         body: formData,
       })
       const data = await response.json()
+      
+      // Check for session-specific errors
+      const sessError = handleSessionError(response, data)
+      if (sessError) {
+        sessionError.value = sessError
+        return { success: false, error: sessError.message }
+      }
+      
       return { success: data.code === 'SUCCESS', data, error: data.message }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to send image'
@@ -322,7 +528,18 @@ export const useWhatsAppAPI = () => {
     error: readonly(error),
     isConnected: readonly(isConnected),
     qrCode: readonly(qrCode),
-    baseUrl,
+    
+    // Multi-session state
+    currentSession: readonly(currentMultiSession),
+    sessionError: readonly(sessionError),
+
+    // Session management (Requirements: 1.2, 1.3, 3.1, 3.2)
+    setSession,
+    getSession,
+    getBaseUrl,
+    isSessionValid,
+    requireSession,
+    clearSessionError,
 
     // Actions
     getLoginQR,

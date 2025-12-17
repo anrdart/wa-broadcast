@@ -7,22 +7,32 @@ const appState = useAppState()
 const api = useWhatsAppAPI()
 const isLoggingOut = ref(false)
 
+// Get injected logout handler from app.vue (Requirements: 1.4)
+const injectedLogout = inject<() => Promise<void>>('handleLogout')
+
 const navItems = [
   { id: 'broadcast', label: 'Broadcast', icon: Send },
   { id: 'history', label: 'History', icon: Calendar },
 ] as const
 
+/**
+ * Handle logout with session cleanup
+ * Requirements: 1.4
+ */
 const handleLogout = async () => {
   if (!confirm('Are you sure you want to logout?')) return
   
   isLoggingOut.value = true
   
   try {
-    // Call API to logout from WhatsApp
-    await api.logout()
-    
-    // Clear local state
-    appState.logout()
+    // Use injected logout handler if available (handles session termination)
+    if (injectedLogout) {
+      await injectedLogout()
+    } else {
+      // Fallback to direct API logout
+      await api.logout()
+      appState.logout()
+    }
     
     // Redirect to login
     window.location.reload()
@@ -72,10 +82,8 @@ const toggleMobileMenu = () => {
 
       <!-- Right Side -->
       <div class="flex items-center gap-2">
-        <Badge variant="success" class="hidden sm:flex items-center gap-1">
-          <span class="w-2 h-2 rounded-full bg-white animate-pulse" />
-          Connected
-        </Badge>
+        <!-- Session Status Indicator (Requirements: 5.1, 5.2, 5.3, 5.4) -->
+        <SessionStatusIndicator class="hidden sm:flex" />
         
         <Button variant="ghost" size="icon" class="hidden md:flex">
           <Settings class="w-5 h-5" />
