@@ -167,8 +167,10 @@ watch(() => appState.authStatus.value, async (status) => {
 const syncContacts = async () => {
   try {
     const result = await api.getMyContacts()
-    if (result.success && result.data?.results) {
-      const contacts: Contact[] = result.data.results.map((item) => ({
+    // Handle nested response: results.data can be null or array
+    const contactsData = result.data?.results?.data || result.data?.results
+    if (result.success && Array.isArray(contactsData) && contactsData.length > 0) {
+      const contacts: Contact[] = contactsData.map((item) => ({
         id: item.jid,
         name: item.name || extractPhoneFromJid(item.jid),
         number: extractPhoneFromJid(item.jid),
