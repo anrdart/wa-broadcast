@@ -131,7 +131,7 @@ export const useWhatsAppAPI = () => {
 
   /**
    * Get API headers including session context
-   * Adds session token and port header for routing
+   * Only adds X-Session-Port header for nginx routing
    * Requirements: 1.2, 1.3
    */
   const getHeaders = (): Record<string, string> => {
@@ -139,18 +139,9 @@ export const useWhatsAppAPI = () => {
       'Content-Type': 'application/json',
     }
     
-    // Add session headers if session is set
+    // Add session port header for nginx routing
     if (currentMultiSession.value) {
-      // Session port header for nginx routing
       headers['X-Session-Port'] = currentMultiSession.value.api_instance_port.toString()
-      
-      // Session token for authentication
-      if (currentMultiSession.value.session_token) {
-        headers['X-Session-Token'] = currentMultiSession.value.session_token
-      }
-      
-      // Session ID for tracking
-      headers['X-Session-Id'] = currentMultiSession.value.id
     }
     
     return headers
@@ -337,13 +328,10 @@ export const useWhatsAppAPI = () => {
     const baseUrl = getBaseUrl()
     
     // Build headers for FormData (exclude Content-Type, let browser set it)
+    // Only add X-Session-Port for nginx routing
     const headers: Record<string, string> = {}
     if (currentMultiSession.value) {
       headers['X-Session-Port'] = currentMultiSession.value.api_instance_port.toString()
-      if (currentMultiSession.value.session_token) {
-        headers['X-Session-Token'] = currentMultiSession.value.session_token
-      }
-      headers['X-Session-Id'] = currentMultiSession.value.id
     }
     
     try {
