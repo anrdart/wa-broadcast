@@ -235,11 +235,13 @@ export const useWhatsAppAPI = () => {
     error.value = null
     sessionError.value = null
 
-    // Get session-specific base URL
-    const baseUrl = getBaseUrl()
+    // Get session-specific base URL (remove trailing slash if present)
+    const baseUrl = getBaseUrl().replace(/\/+$/, '')
+    // Ensure endpoint starts with / and has no leading double slashes
+    const cleanEndpoint = '/' + endpoint.replace(/^\/+/, '')
 
     try {
-      const response = await fetch(`${baseUrl}${endpoint}`, {
+      const response = await fetch(`${baseUrl}${cleanEndpoint}`, {
         ...options,
         headers: {
           ...getHeaders(),
