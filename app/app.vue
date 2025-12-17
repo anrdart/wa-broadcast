@@ -171,13 +171,18 @@ watch(() => appState.authStatus.value, async (status) => {
 
 // Sync contacts from WhatsApp with retry mechanism
 // This handles the delay between QR scan and WhatsApp server sync
+// Waits until contacts count stabilizes (no new contacts for 2 consecutive checks)
 const syncContactsWithRetry = async () => {
-  const maxRetries = 10
+  const maxRetries = 15
   const retryDelay = 2000 // 2 seconds between retries
+  const stabilityChecks = 2 // Number of consecutive checks with same count to consider stable
+  
+  let lastContactCount = 0
+  let stableCount = 0
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     // Update progress based on attempt
-    const progress = Math.min(10 + (attempt * 8), 90)
+    const progress = Math.min(10 + (attempt * 6), 95)
     appState.setLoadingProgress(progress)
     
     try {
@@ -185,23 +190,44 @@ const syncContactsWithRetry = async () => {
       const contactsData = result.data?.results?.data || result.data?.results
       
       if (result.success && Array.isArray(contactsData) && contactsData.length > 0) {
-        // Success! Set contacts and finish loading
+        const currentCount = contactsData.length
+        console.log(`[Sync] Attempt ${attempt}/${maxRetries}: Found ${currentCount} contacts`)
+        
+        // Update contacts in state
         const contacts = transformContactsData(contactsData)
         appState.setContacts(contacts)
-        console.log(`[Sync] Loaded ${contacts.length} contacts on attempt ${attempt}`)
         
-        appState.setLoadingProgress(100)
-        await new Promise(r => setTimeout(r, 500))
-        appState.setAuthStatus('authenticated')
-        return
+        // Check if count is stable (same as last check)
+        if (currentCount === lastContactCount) {
+          stableCount++
+          console.log(`[Sync] Contact count stable (${stableCount}/${stabilityChecks})`)
+          
+          if (stableCount >= stabilityChecks) {
+            // Contacts are stable, finish loading
+            console.log(`[Sync] Sync complete! Final count: ${currentCount} contacts`)
+            appState.setLoadingProgress(100)
+            await new Promise(r => setTimeout(r, 500))
+            appState.setAuthStatus('authenticated')
+            return
+          }
+        } else {
+          // Count changed, reset stability counter
+          stableCount = 0
+          lastContactCount = currentCount
+        }
+        
+        await new Promise(r => setTimeout(r, retryDelay))
+      } else {
+        // No contacts yet, wait and retry
+        console.log(`[Sync] Attempt ${attempt}/${maxRetries}: No contacts yet, retrying...`)
+        stableCount = 0
+        lastContactCount = 0
+        await new Promise(r => setTimeout(r, retryDelay))
       }
-      
-      // No contacts yet, wait and retry
-      console.log(`[Sync] Attempt ${attempt}/${maxRetries}: No contacts yet, retrying...`)
-      await new Promise(r => setTimeout(r, retryDelay))
       
     } catch (err) {
       console.error(`[Sync] Attempt ${attempt}/${maxRetries} failed:`, err)
+      stableCount = 0
       await new Promise(r => setTimeout(r, retryDelay))
     }
   }
