@@ -131,7 +131,14 @@ onUnmounted(() => {
 })
 
 // Use props or local state
-const displayQR = computed(() => props.qrCode || localQR.value)
+// Fix mixed content: convert http:// to https:// for QR code URL
+const displayQR = computed(() => {
+  const qr = props.qrCode || localQR.value
+  if (qr && qr.startsWith('http://')) {
+    return qr.replace('http://', 'https://')
+  }
+  return qr
+})
 const displayError = computed(() => props.error || localError.value)
 </script>
 
