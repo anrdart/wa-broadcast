@@ -105,15 +105,10 @@ const stopAllIntervals = () => {
 const goToDashboard = async () => {
   appState.setQRCode(null)
   localQR.value = null
+  
+  // Set to loading_data - app.vue will handle sync with retry mechanism
+  // The sync process will automatically set to 'authenticated' when done
   appState.setAuthStatus('loading_data')
-  
-  // Loading animation
-  for (let i = 0; i <= 100; i += 20) {
-    appState.setLoadingProgress(i)
-    await new Promise(r => setTimeout(r, 100))
-  }
-  
-  appState.setAuthStatus('authenticated')
 }
 
 const handleRefreshQR = async () => {

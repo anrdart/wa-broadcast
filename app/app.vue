@@ -41,6 +41,12 @@ onUnmounted(() => {
   // Remove beforeunload handler
   window.removeEventListener('beforeunload', handleBeforeUnload)
   
+  // Clear scheduled broadcast processor interval
+  if (scheduledBroadcastInterval) {
+    clearInterval(scheduledBroadcastInterval)
+    scheduledBroadcastInterval = null
+  }
+  
   // Unsubscribe from realtime changes
   supabase.unsubscribeFromChanges()
 })
@@ -66,9 +72,12 @@ const loadScheduledBroadcasts = () => {
   return []
 }
 
+// Store interval ID for cleanup
+let scheduledBroadcastInterval: ReturnType<typeof setInterval> | null = null
+
 // Scheduled broadcast processor - check and send due broadcasts every 30 seconds
 const startScheduledBroadcastProcessor = () => {
-  setInterval(async () => {
+  scheduledBroadcastInterval = setInterval(async () => {
     const scheduled = loadScheduledBroadcasts()
     const now = new Date()
     
@@ -149,35 +158,69 @@ const updateHistoryStatus = (id: string, status: string, success = 0, failed = 0
   appState.setBroadcastHistory(history)
 }
 
-// Sync contacts on mount if already authenticated
-onMounted(async () => {
-  if (appState.authStatus.value === 'authenticated') {
-    await syncContacts()
-  }
-})
+// Note: Initial contact sync for already-authenticated users is handled in the first onMounted hook
+// by checking authStatus after initialization
 
 // Watch for authentication and sync contacts
 watch(() => appState.authStatus.value, async (status) => {
-  if (status === 'authenticated') {
-    await syncContacts()
+  if (status === 'loading_data') {
+    // Sync contacts with retry during loading phase
+    await syncContactsWithRetry()
   }
 })
 
-// Sync contacts from WhatsApp
+// Sync contacts from WhatsApp with retry mechanism
+// This handles the delay between QR scan and WhatsApp server sync
+const syncContactsWithRetry = async () => {
+  const maxRetries = 10
+  const retryDelay = 2000 // 2 seconds between retries
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    // Update progress based on attempt
+    const progress = Math.min(10 + (attempt * 8), 90)
+    appState.setLoadingProgress(progress)
+    
+    try {
+      const result = await api.getMyContacts()
+      const contactsData = result.data?.results?.data || result.data?.results
+      
+      if (result.success && Array.isArray(contactsData) && contactsData.length > 0) {
+        // Success! Set contacts and finish loading
+        const contacts = transformContactsData(contactsData)
+        appState.setContacts(contacts)
+        console.log(`[Sync] Loaded ${contacts.length} contacts on attempt ${attempt}`)
+        
+        appState.setLoadingProgress(100)
+        await new Promise(r => setTimeout(r, 500))
+        appState.setAuthStatus('authenticated')
+        return
+      }
+      
+      // No contacts yet, wait and retry
+      console.log(`[Sync] Attempt ${attempt}/${maxRetries}: No contacts yet, retrying...`)
+      await new Promise(r => setTimeout(r, retryDelay))
+      
+    } catch (err) {
+      console.error(`[Sync] Attempt ${attempt}/${maxRetries} failed:`, err)
+      await new Promise(r => setTimeout(r, retryDelay))
+    }
+  }
+  
+  // Max retries reached, proceed anyway (user can manually sync later)
+  console.log('[Sync] Max retries reached, proceeding to dashboard')
+  appState.setLoadingProgress(100)
+  await new Promise(r => setTimeout(r, 500))
+  appState.setAuthStatus('authenticated')
+}
+
+// Sync contacts from WhatsApp (for manual refresh)
 const syncContacts = async () => {
   try {
     const result = await api.getMyContacts()
     // Handle nested response: results.data can be null or array
     const contactsData = result.data?.results?.data || result.data?.results
     if (result.success && Array.isArray(contactsData) && contactsData.length > 0) {
-      const contacts: Contact[] = contactsData.map((item) => ({
-        id: item.jid,
-        name: item.name || extractPhoneFromJid(item.jid),
-        number: extractPhoneFromJid(item.jid),
-        isMyContact: true,
-        isFromCSV: false,
-      }))
-      appState.setContacts(contacts)
+      appState.setContacts(transformContactsData(contactsData))
     }
   } catch (err) {
     console.error('Failed to sync contacts:', err)
@@ -187,6 +230,17 @@ const syncContacts = async () => {
 // Extract phone number from JID (e.g., "628123456789@s.whatsapp.net" -> "628123456789")
 const extractPhoneFromJid = (jid: string): string => {
   return jid.replace(/@.*$/, '')
+}
+
+// Transform API contact data to Contact type
+const transformContactsData = (contactsData: any[]): Contact[] => {
+  return contactsData.map((item) => ({
+    id: item.jid,
+    name: item.name || extractPhoneFromJid(item.jid),
+    number: extractPhoneFromJid(item.jid),
+    isMyContact: true,
+    isFromCSV: false,
+  }))
 }
 </script>
 
