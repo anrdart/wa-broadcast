@@ -120,30 +120,13 @@ export const useWhatsAppAPI = () => {
 
   /**
    * Get base URL for current session
-   * Returns session-specific URL based on allocated port
+   * Returns the default base URL - nginx handles routing via X-Session-Port header
    * Requirements: 1.2, 1.3
    */
   const getBaseUrl = (): string => {
-    if (!currentMultiSession.value) {
-      // Fall back to default URL if no session is set
-      return defaultBaseUrl
-    }
-    
-    // Build session-specific URL using the allocated port
-    // The URL format assumes nginx routing or direct port access
-    const port = currentMultiSession.value.api_instance_port
-    
-    // Parse the default URL to extract protocol and host
-    try {
-      const url = new URL(defaultBaseUrl)
-      // Replace port with session-specific port
-      url.port = port.toString()
-      return url.origin
-    } catch {
-      // If URL parsing fails, construct manually
-      // Assume localhost for development
-      return `http://localhost:${port}`
-    }
+    // Always use the default base URL (nginx entry point)
+    // Nginx routes to the correct instance based on X-Session-Port header
+    return defaultBaseUrl
   }
 
   /**
