@@ -287,8 +287,8 @@ export const useSessionManager = (): UseSessionManager => {
   }
 
   /**
-   * Create new session
-   * Creates a new session record with allocated port
+   * Create new session (with auto-cleanup of existing session)
+   * Deletes existing session for device first, then creates new
    * Requirements: 1.2
    */
   const createSession = async (deviceId: string): Promise<Session | null> => {
@@ -298,6 +298,17 @@ export const useSessionManager = (): UseSessionManager => {
     error.value = null
 
     try {
+      // First, delete any existing session for this device (auto-cleanup)
+      const { error: deleteError } = await supabase
+        .from('whatsapp_sessions')
+        .delete()
+        .eq('device_id', deviceId)
+      
+      if (deleteError) {
+        console.warn('[SessionManager] Error cleaning up old session:', deleteError)
+        // Continue anyway - might not have an existing session
+      }
+
       // Allocate a port from the pool
       const port = await allocatePort()
       if (!port) {
