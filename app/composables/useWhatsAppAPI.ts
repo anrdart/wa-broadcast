@@ -131,8 +131,7 @@ export const useWhatsAppAPI = () => {
 
   /**
    * Get API headers including session context
-   * X-Session-Port header DISABLED - Cloudflare blocks custom headers
-   * All requests go to default backend (whatsapp_1)
+   * Adds X-Session-Port header for nginx routing to correct backend instance
    * Requirements: 1.2, 1.3
    */
   const getHeaders = (): Record<string, string> => {
@@ -140,11 +139,10 @@ export const useWhatsAppAPI = () => {
       'Content-Type': 'application/json',
     }
     
-    // DISABLED: Cloudflare Tunnel blocks X-Session-Port custom header
-    // Uncomment below to enable multi-session routing when not using Cloudflare
-    // if (currentMultiSession.value) {
-    //   headers['X-Session-Port'] = currentMultiSession.value.api_instance_port.toString()
-    // }
+    // Add session port header for nginx multi-instance routing
+    if (currentMultiSession.value) {
+      headers['X-Session-Port'] = currentMultiSession.value.api_instance_port.toString()
+    }
     
     return headers
   }
