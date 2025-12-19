@@ -177,22 +177,25 @@ export const useSessionManager = (): UseSessionManager => {
     error.value = null
 
     try {
+      // Note: Don't use .single() as it causes 406 error with object accept header
       const { data, error: fetchError } = await supabase
         .from('whatsapp_sessions')
         .select('*')
         .eq('device_id', deviceId)
-        .single()
+        .limit(1)
 
       if (fetchError) {
-        // PGRST116 = no rows returned, which is expected for new devices
-        if (fetchError.code !== 'PGRST116') {
-          console.error('[SessionManager] Error fetching session:', fetchError)
-          error.value = fetchError.message
-        }
+        console.error('[SessionManager] Error fetching session:', fetchError)
+        error.value = fetchError.message
         return null
       }
 
-      const session = data as Session
+      if (!data || data.length === 0) {
+        // No session exists for this device - expected for new devices
+        return null
+      }
+
+      const session = data[0] as Session
       currentSession.value = session
       return session
     } catch (err) {
@@ -213,19 +216,24 @@ export const useSessionManager = (): UseSessionManager => {
   const allocatePort = async (): Promise<number | null> => {
     try {
       // Find an available instance in the pool
-      const { data: availableInstance, error: fetchError } = await supabase
+      // Note: Don't use .single() as it causes 406 error with object accept header
+      const { data: availableInstances, error: fetchError } = await supabase
         .from('session_pool')
         .select('*')
         .eq('status', 'available')
         .limit(1)
-        .single()
 
-      if (fetchError || !availableInstance) {
+      if (fetchError) {
+        console.error('[SessionManager] Error fetching session pool:', fetchError)
+        return null
+      }
+      
+      if (!availableInstances || availableInstances.length === 0) {
         console.error('[SessionManager] No available instances in pool')
         return null
       }
 
-      return (availableInstance as SessionPoolRecord).port
+      return (availableInstances[0] as SessionPoolRecord).port
     } catch (err) {
       console.error('[SessionManager] allocatePort error:', err)
       return null
