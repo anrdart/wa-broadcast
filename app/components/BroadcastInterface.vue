@@ -73,7 +73,7 @@ const handleSendBroadcast = async () => {
 
     // Add to history (this will also save to Supabase via useAppState)
     // Requirements: 1.1 - Save broadcast history to Supabase after completion
-    const broadcastId = Date.now().toString()
+    const broadcastId = crypto.randomUUID()
     await appState.addBroadcastHistory({
       id: broadcastId,
       message: messageText.value,
